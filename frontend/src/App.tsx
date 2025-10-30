@@ -4,6 +4,9 @@ import { ProgramList } from './components/ProgramList';
 import { ProgramDetail } from './components/ProgramDetail';
 import { MachinesView } from './components/MachinesView';
 import { SetupSheetPreview } from './components/SetupSheetPreview';
+import { SetupSheetEditor } from './components/SetupSheetEditor';
+import { NewProgram } from './components/NewProgram';
+import { useProgram } from './hooks/use-programs';
 import type { NCProgram } from './types';
 import {
   LayoutDashboard,
@@ -15,17 +18,22 @@ import {
   User,
   Menu,
   X,
+  ArrowLeft,
 } from 'lucide-react';
 import { Button } from './components/ui/Button';
 import { Input } from './components/ui/Input';
 
-type View = 'dashboard' | 'programs' | 'machines' | 'settings';
+type View = 'dashboard' | 'programs' | 'machines' | 'settings' | 'createProgram';
 
 function App() {
   const [currentView, setCurrentView] = useState<View>('dashboard');
-  const [selectedProgram, setSelectedProgram] = useState<NCProgram | null>(null);
+  const [selectedProgramId, setSelectedProgramId] = useState<string | null>(null);
   const [showSetupSheet, setShowSetupSheet] = useState(false);
+  const [editSetupSheet, setEditSetupSheet] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  
+  // Fetch full program details when ID is selected
+  const { program: selectedProgram, loading: loadingProgram } = useProgram(selectedProgramId);
 
   const navigation = [
     { name: 'Dashboard', icon: LayoutDashboard, view: 'dashboard' as View },
@@ -36,48 +44,173 @@ function App() {
 
   const handleNavigation = (view: View) => {
     setCurrentView(view);
-    setSelectedProgram(null);
+    setSelectedProgramId(null);
     setShowSetupSheet(false);
+    setEditSetupSheet(false);
   };
 
   const handleSelectProgram = (program: NCProgram) => {
-    setSelectedProgram(program);
+    setSelectedProgramId(program.id);
     setShowSetupSheet(false);
+    setEditSetupSheet(false);
   };
 
   const handleBackFromProgram = () => {
-    setSelectedProgram(null);
+    setSelectedProgramId(null);
     setShowSetupSheet(false);
+    setEditSetupSheet(false);
   };
 
   const handleViewSetupSheet = () => {
-    if (selectedProgram) {
+    if (selectedProgramId) {
       setShowSetupSheet(true);
+      setEditSetupSheet(false);
+    }
+  };
+
+  const handleEditSetupSheet = () => {
+    if (selectedProgramId) {
+      setEditSetupSheet(true);
+      setShowSetupSheet(false);
     }
   };
 
   const handleBackFromSetupSheet = () => {
     setShowSetupSheet(false);
+    setEditSetupSheet(false);
+  };
+
+  const handleSetupSheetSaved = () => {
+    setEditSetupSheet(false);
+    setShowSetupSheet(true);
+    // Optionally refresh program data
+    if (selectedProgramId) {
+      window.location.reload(); // Simple refresh - could be improved with proper state management
+    }
   };
 
   const renderContent = () => {
+    // Setup Sheet Editor
+    if (editSetupSheet && selectedProgramId && selectedProgram) {
+      // Extract machine ID - handle both string and object formats
+      // Program object should have machineId field directly from database
+      let machineId = (selectedProgram as any).machineId || '';
+      
+      // If not found, try from machine object
+      if (!machineId) {
+        if (typeof selectedProgram.machine === 'string') {
+          // If machine is a string, it might be the ID or name - we need to fetch it
+          // For now, try to use it as ID if it looks like a UUID
+          if (selectedProgram.machine.length >= 36) {
+            machineId = selectedProgram.machine;
+          } else {
+            // It's probably a name, we need to fetch the machine ID
+            console.warn('Machine is a string that is not a UUID:', selectedProgram.machine);
+          }
+        } else if ((selectedProgram as any).machine?.id) {
+          machineId = (selectedProgram as any).machine.id;
+        }
+      }
+      
+      const machineType = typeof selectedProgram.machine === 'string'
+        ? selectedProgram.machine
+        : (selectedProgram as any).machine?.type || (selectedProgram as any).machine?.name || '';
+      
+      console.log('SetupSheetEditor - machineId:', machineId, 'machineType:', machineType, 'program:', selectedProgram);
+      
+      // If machineId is not a UUID, we need to fetch it
+      if (!machineId || machineId.length < 36) {
+        // Try to get machine ID from name or fetch machines
+        // For now, show error or fetch machines
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={handleBackFromSetupSheet}>
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div>
+                <p className="text-red-600">Kunne ikke finde maskine ID. Kontroller at programmet har en maskine tildelt.</p>
+                <p className="text-sm text-muted-foreground mt-2">
+                  Machine ID: {machineId || 'Ikke fundet'} | Machine: {JSON.stringify(selectedProgram.machine)}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Program keys: {Object.keys(selectedProgram).join(', ')}
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      }
+      
+      return (
+        <SetupSheetEditor
+          programId={selectedProgramId}
+          machineId={machineId}
+          machineType={machineType}
+          onSave={handleSetupSheetSaved}
+          onCancel={handleBackFromSetupSheet}
+        />
+      );
+    }
+
     // Setup Sheet Preview (within program context)
-    if (showSetupSheet && selectedProgram) {
+    if (showSetupSheet && selectedProgramId) {
       return (
         <SetupSheetPreview 
-          programId={selectedProgram.id} 
+          programId={selectedProgramId} 
           onBack={handleBackFromSetupSheet}
+          onEdit={handleEditSetupSheet}
         />
       );
     }
 
     // Program Detail
-    if (selectedProgram) {
+    if (selectedProgramId) {
+      if (loadingProgram) {
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={handleBackFromProgram}>
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <p className="text-muted-foreground">Henter programdetaljer...</p>
+            </div>
+          </div>
+        );
+      }
+      
+      if (!selectedProgram) {
+        return (
+          <div className="space-y-6">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={handleBackFromProgram}>
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <p className="text-muted-foreground">Kunne ikke hente programdetaljer</p>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <ProgramDetail 
           program={selectedProgram} 
           onBack={handleBackFromProgram} 
           onViewSetupSheet={handleViewSetupSheet}
+          onEditSetupSheet={handleEditSetupSheet}
+        />
+      );
+    }
+
+    // New Program
+    if (currentView === 'createProgram') {
+      return (
+        <NewProgram
+          onBack={() => handleNavigation('programs')}
+          onCreated={(programId) => {
+            setSelectedProgramId(programId);
+            setCurrentView('programs');
+          }}
         />
       );
     }
@@ -87,7 +220,7 @@ function App() {
       case 'dashboard':
         return <Dashboard />;
       case 'programs':
-        return <ProgramList onSelectProgram={handleSelectProgram} />;
+        return <ProgramList onSelectProgram={handleSelectProgram} onCreateNew={() => handleNavigation('createProgram')} />;
       case 'machines':
         return <MachinesView onSelectProgram={handleSelectProgram} />;
       case 'settings':
@@ -160,7 +293,7 @@ function App() {
           <nav className="space-y-1 p-4">
             {navigation.map((item) => {
               const Icon = item.icon;
-              const isActive = currentView === item.view && !selectedProgram && !showSetupSheet;
+              const isActive = currentView === item.view && !selectedProgramId && !showSetupSheet && !editSetupSheet;
               return (
                 <button
                   key={item.name}

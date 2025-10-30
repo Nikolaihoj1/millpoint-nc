@@ -1,5 +1,6 @@
-import { useState, useMemo } from 'react';
-import { mockPrograms, machines } from '../data/mockData';
+import { useState, useMemo, useEffect } from 'react';
+import { usePrograms } from '../hooks';
+import { programsApi, machinesApi } from '../api';
 import type { NCProgram } from '../types';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
@@ -21,21 +22,44 @@ import {
 
 interface ProgramListProps {
   onSelectProgram: (program: NCProgram) => void;
+  onCreateNew?: () => void;
 }
 
-export function ProgramList({ onSelectProgram }: ProgramListProps) {
+export function ProgramList({ onSelectProgram, onCreateNew }: ProgramListProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterMachine, setFilterMachine] = useState<string>('all');
   const [filterCustomer, setFilterCustomer] = useState<string>('all');
 
-  // Get unique customers and machines for filters
-  const customers = useMemo(() => {
-    const unique = Array.from(new Set(mockPrograms.map(p => p.customer)));
-    return unique.sort();
+  // Fetch programs via API
+  const { programs, loading, error } = usePrograms({
+    search: searchTerm || undefined,
+    status: filterStatus !== 'all' ? (filterStatus as any) : undefined,
+    customer: filterCustomer !== 'all' ? filterCustomer : undefined,
+    sortBy: 'lastModified',
+    sortOrder: 'desc',
+    limit: 100,
+  });
+
+  const [machineOptions, setMachineOptions] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await machinesApi.getAll();
+        if (res.success && res.data) {
+          setMachineOptions(res.data.map(m => ({ id: (m as any).id, name: (m as any).name })));
+        }
+      } catch {}
+    })();
   }, []);
 
-  const filteredPrograms = mockPrograms.filter((program) => {
+  // Get unique customers and machines for filters
+  const customers = useMemo(() => {
+    const unique = Array.from(new Set((programs || []).map(p => p.customer)));
+    return unique.sort();
+  }, [programs]);
+
+  const filteredPrograms = (programs || []).filter((program) => {
     // Search across multiple fields
     const matchesSearch = searchTerm === '' || 
       program.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -45,7 +69,7 @@ export function ProgramList({ onSelectProgram }: ProgramListProps) {
       (program.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
     
     const matchesStatus = filterStatus === 'all' || program.status === filterStatus;
-    const matchesMachine = filterMachine === 'all' || program.machine === filterMachine;
+    const matchesMachine = filterMachine === 'all' || (program as any).machine?.id === filterMachine || (program as any).machine?.name === filterMachine;
     const matchesCustomer = filterCustomer === 'all' || program.customer === filterCustomer;
     
     return matchesSearch && matchesStatus && matchesMachine && matchesCustomer;
@@ -62,7 +86,7 @@ export function ProgramList({ onSelectProgram }: ProgramListProps) {
     }
   };
 
-  const hasActiveFilters = filterStatus !== 'all' || filterMachine !== 'all' || filterCustomer !== 'all';
+  const hasActiveFilters = filterStatus !== 'all' || filterMachine !== 'all' || filterCustomer !== 'all' || !!searchTerm;
 
   const clearFilters = () => {
     setFilterStatus('all');
@@ -83,7 +107,56 @@ export function ProgramList({ onSelectProgram }: ProgramListProps) {
             <Upload className="mr-2 h-4 w-4" />
             Importer
           </Button>
-          <Button>
+          <Button
+            onClick={async () => {
+              if (onCreateNew) {
+                onCreateNew();
+                return;
+              }
+              try {
+                // Ensure at least one machine exists
+                const machinesRes = await machinesApi.getAll();
+                const machinesList = machinesRes.success && machinesRes.data ? machinesRes.data : [];
+                if (!machinesList.length) {
+                  alert('Ingen maskiner fundet. Opret en maskine først under Maskiner.');
+                  return;
+                }
+
+                const name = prompt('Programnavn');
+                if (!name) return;
+                const partNumber = prompt('Varenummer');
+                if (!partNumber) return;
+                const revision = prompt('Revision (f.eks. A)') || 'A';
+                const operation = prompt('Operation') || 'Bearbejdning';
+                const material = prompt('Materiale') || 'Aluminium';
+                const customer = prompt('Kunde') || 'Ukendt';
+
+                // Pick first machine for simplicity
+                const machineId = (machinesList[0] as any).id;
+
+                const res = await programsApi.create({
+                  name,
+                  partNumber,
+                  revision,
+                  machineId,
+                  operation,
+                  material,
+                  customer,
+                  status: 'Draft' as any,
+                } as any);
+
+                if (res.success) {
+                  // Simple refresh via search toggle
+                  setSearchTerm(prev => prev + '');
+                  alert('Program oprettet.');
+                } else {
+                  alert('Kunne ikke oprette program.');
+                }
+              } catch (e:any) {
+                alert('Fejl ved oprettelse: ' + (e?.message || e));
+              }
+            }}
+          >
             <FileCode2 className="mr-2 h-4 w-4" />
             Nyt Program
           </Button>
@@ -150,7 +223,7 @@ export function ProgramList({ onSelectProgram }: ProgramListProps) {
                 className="h-9 rounded-md border border-input bg-background px-3 py-1 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <option value="all">Alle Maskiner</option>
-                {machines.map(machine => (
+                {machineOptions.map(machine => (
                   <option key={machine.id} value={machine.id}>{machine.name}</option>
                 ))}
               </select>
@@ -181,7 +254,7 @@ export function ProgramList({ onSelectProgram }: ProgramListProps) {
 
           {/* Results Count */}
           <div className="text-sm text-muted-foreground">
-            Viser {filteredPrograms.length} af {mockPrograms.length} programmer
+            {loading ? 'Henter programmer...' : error ? 'Fejl ved hentning' : `Viser ${filteredPrograms.length} programmer`}
           </div>
         </div>
       </Card>
@@ -215,7 +288,7 @@ export function ProgramList({ onSelectProgram }: ProgramListProps) {
                   </div>
                   <div>
                     <span className="text-muted-foreground">Maskine:</span>
-                    <p className="font-medium">{program.machine}</p>
+                    <p className="font-medium">{(program as any).machine?.name || '—'}</p>
                   </div>
                   <div>
                     <span className="text-muted-foreground">Operation:</span>
@@ -232,7 +305,7 @@ export function ProgramList({ onSelectProgram }: ProgramListProps) {
                 )}
 
                 <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span>Ændret {program.lastModified} af {program.author}</span>
+                  <span>Ændret {program.lastModified} af {(program as any).author?.name || (program as any).author || '—'}</span>
                   {program.workOrder && <span>AO: {program.workOrder}</span>}
                   
                   <div className="flex gap-2 ml-auto">

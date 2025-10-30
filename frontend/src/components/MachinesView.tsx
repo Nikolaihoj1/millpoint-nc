@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { machines, mockPrograms } from '../data/mockData';
+import { useEffect, useState } from 'react';
+import { machinesApi, programsApi } from '../api';
 import type { NCProgram } from '../types';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
 import { Badge } from './ui/Badge';
@@ -22,13 +22,36 @@ interface MachinesViewProps {
 }
 
 export function MachinesView({ onSelectProgram }: MachinesViewProps) {
-  const [selectedMachine, setSelectedMachine] = useState(machines[0].id);
+  const [machines, setMachines] = useState<any[]>([]);
+  const [selectedMachine, setSelectedMachine] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterCustomer, setFilterCustomer] = useState<string>('all');
 
+  const [machinePrograms, setMachinePrograms] = useState<NCProgram[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      const res = await machinesApi.getAll();
+      if (res.success && res.data) {
+        setMachines(res.data as any[]);
+        if (!selectedMachine && (res.data as any[]).length) {
+          setSelectedMachine((res.data as any[])[0].id);
+        }
+      }
+    })();
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      if (!selectedMachine) return;
+      const res = await programsApi.getAll({ machineId: selectedMachine, limit: 200 });
+      if (res.success && res.data) setMachinePrograms(res.data as any);
+      else setMachinePrograms([]);
+    })();
+  }, [selectedMachine]);
+
   const currentMachine = machines.find(m => m.id === selectedMachine);
-  const machinePrograms = mockPrograms.filter(p => p.machine === selectedMachine);
   
   // Get unique customers for this machine
   const customers = Array.from(new Set(machinePrograms.map(p => p.customer))).sort();
@@ -82,7 +105,7 @@ export function MachinesView({ onSelectProgram }: MachinesViewProps) {
               <Server className={`h-4 w-4 ${machine.status === 'Online' ? 'text-green-600' : 'text-gray-400'}`} />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{machinePrograms.filter(p => p.machine === machine.id).length}</div>
+              <div className="text-2xl font-bold">{selectedMachine === machine.id ? machinePrograms.length : ''}</div>
               <div className="flex items-center justify-between mt-2">
                 <p className="text-xs text-muted-foreground">{machine.type}</p>
                 <Badge variant={machine.status === 'Online' ? 'success' : 'secondary'} className="text-xs">
@@ -219,7 +242,7 @@ export function MachinesView({ onSelectProgram }: MachinesViewProps) {
                       </div>
 
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>Ændret {program.lastModified} af {program.author}</span>
+                        <span>Ændret {program.lastModified} af {(program as any).author?.name || (program as any).author || '—'}</span>
                         <div className="flex gap-2 ml-auto">
                           {program.hasCAD && (
                             <span className="flex items-center gap-1 text-green-600">

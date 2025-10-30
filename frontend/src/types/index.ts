@@ -15,6 +15,7 @@ export interface NCProgram {
   hasDXF: boolean;
   hasSetupSheet: boolean;
   description?: string;
+  ncCode?: string; // NC program code content
 }
 
 export interface Tool {

@@ -1,0 +1,216 @@
+// Prisma Schema for MillPoint NC Program Management
+// Following Cursor Clause 4.5 Rules
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// User model for authentication and authorization
+model User {
+  id            String   @id @default(uuid())
+  email         String   @unique
+  name          String
+  role          String   // 'programmer', 'quality', 'operator', 'admin'
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  authoredPrograms      NCProgram[]    @relation("ProgramAuthor")
+  approvedPrograms      NCProgram[]    @relation("ProgramApprover")
+  createdSetupSheets    SetupSheet[]   @relation("SetupSheetCreator")
+  approvedSetupSheets   SetupSheet[]   @relation("SetupSheetApprover")
+  programVersions       ProgramVersion[]
+}
+
+/// NC Program model
+model NCProgram {
+  id              String   @id @default(uuid())
+  name            String
+  partNumber      String
+  revision        String
+  machineId       String
+  operation       String
+  material        String
+  status          String   // 'Draft', 'In Review', 'Approved', 'Released', 'Obsolete'
+  workOrder       String?
+  customer        String
+  description     String?
+  filePath        String?  // Path to NC file in storage
+  ncCode          String?  @db.Text // NC program code content
+  
+  // CAD/DXF flags
+  hasCAD          Boolean  @default(false)
+  hasDXF          Boolean  @default(false)
+  cadFilePath     String?
+  dxfFilePath     String?
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastModified    DateTime @updatedAt
+  
+  // Approval tracking
+  authorId        String
+  approverId      String?
+  approvedAt      DateTime?
+  
+  // Relations
+  author          User         @relation("ProgramAuthor", fields: [authorId], references: [id])
+  approver        User?        @relation("ProgramApprover", fields: [approverId], references: [id])
+  machine         Machine      @relation(fields: [machineId], references: [id])
+  setupSheets     SetupSheet[]
+  versions        ProgramVersion[]
+  
+  @@index([partNumber, revision])
+  @@index([machineId])
+  @@index([status])
+  @@index([customer])
+}
+
+/// Machine model
+model Machine {
+  id              String   @id @default(uuid())
+  name            String
+  type            String   // 'Fræsemaskine', 'Drejebænk', '5-akset fræser', 'EDM'
+  manufacturer    String?
+  model           String?
+  status          String   @default("Offline") // 'Online', 'Offline', 'Maintenance'
+  ipAddress       String?
+  serialPort      String?
+  capabilities    Json?    // JSON object for machine capabilities
+  
+  // Program numbering per machine
+  nextProgramNumber Int    @default(100)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  programs        NCProgram[]
+  setupSheets     SetupSheet[]
+  
+  @@index([status])
+  @@index([type])
+}
+
+/// Setup Sheet model
+model SetupSheet {
+  id              String   @id @default(uuid())
+  programId       String
+  machineId       String
+  machineType     String
+  
+  // Safety and fixtures
+  safetyChecklist Json     // Array of safety check items
+  
+  // Timestamps
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Approval tracking
+  createdById     String
+  approvedById    String?
+  approvedAt      DateTime?
+  
+  // Relations
+  program         NCProgram  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  machine         Machine    @relation(fields: [machineId], references: [id])
+  createdBy       User       @relation("SetupSheetCreator", fields: [createdById], references: [id])
+  approvedBy      User?      @relation("SetupSheetApprover", fields: [approvedById], references: [id])
+  tools           Tool[]
+  originOffsets   OriginOffset[]
+  fixtures        Fixture[]
+  media           Media[]
+  
+  @@index([programId])
+  @@index([machineId])
+}
+
+/// Tool model (part of setup sheet)
+model Tool {
+  id              String   @id @default(uuid())
+  setupSheetId    String
+  toolNumber      Int
+  toolName        String
+  length          Float
+  offsetH         Float
+  offsetD         Float
+  comment         String?
+  
+  setupSheet      SetupSheet @relation(fields: [setupSheetId], references: [id], onDelete: Cascade)
+  
+  @@index([setupSheetId])
+}
+
+/// Origin Offset model (G54, etc.)
+model OriginOffset {
+  id              String   @id @default(uuid())
+  setupSheetId    String
+  name            String   // 'G54', 'G55', etc.
+  x               Float
+  y               Float
+  z               Float
+  a               Float    @default(0)
+  b               Float    @default(0)
+  c               Float    @default(0)
+  
+  setupSheet      SetupSheet @relation(fields: [setupSheetId], references: [id], onDelete: Cascade)
+  
+  @@index([setupSheetId])
+}
+
+/// Fixture model
+model Fixture {
+  id                  String   @id @default(uuid())
+  setupSheetId        String
+  fixtureId           String   // Fixture identifier
+  quantity            Int
+  setupDescription    String?
+  
+  setupSheet          SetupSheet @relation(fields: [setupSheetId], references: [id], onDelete: Cascade)
+  
+  @@index([setupSheetId])
+}
+
+/// Media model (images/videos for setup sheets)
+model Media {
+  id              String   @id @default(uuid())
+  setupSheetId    String
+  type            String   // 'image', 'video'
+  url             String   // File path or URL
+  caption         String?
+  annotations     Json?    // Array of annotation objects
+  order           Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  
+  setupSheet      SetupSheet @relation(fields: [setupSheetId], references: [id], onDelete: Cascade)
+  
+  @@index([setupSheetId])
+}
+
+/// Program Version model (for version control)
+model ProgramVersion {
+  id              String   @id @default(uuid())
+  programId       String
+  versionNumber   Int
+  revision        String
+  filePath        String   // Path to versioned file
+  changeLog       String?
+  
+  createdAt       DateTime @default(now())
+  createdById     String
+  
+  // Relations
+  program         NCProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  createdBy       User      @relation(fields: [createdById], references: [id])
+  
+  @@unique([programId, versionNumber])
+  @@index([programId])
+}
+
