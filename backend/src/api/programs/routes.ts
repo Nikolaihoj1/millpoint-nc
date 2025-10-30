@@ -14,6 +14,8 @@ import {
   programQuerySchema,
   approveProgramSchema,
 } from '../schemas/program.schema';
+import fs from 'fs/promises';
+import path from 'path';
 
 const router = Router();
 
@@ -117,6 +119,28 @@ router.get(
   asyncHandler(async (req, res) => {
     const versions = await programService.getProgramVersions(req.params.id);
     res.json({ success: true, data: versions });
+  })
+);
+
+/**
+ * GET /api/programs/:id/versions/:versionId/content
+ * Get version file content for diff
+ */
+router.get(
+  '/:id/versions/:versionId/content',
+  asyncHandler(async (req, res) => {
+    const { versionId } = req.params;
+    const version = await (db as any).programVersion.findUnique({ where: { id: versionId } });
+    if (!version || !version.filePath) {
+      return res.status(404).json({ success: false, error: 'Version not found' });
+    }
+    try {
+      const content = await fs.readFile(version.filePath, 'utf8');
+      res.type('text/plain').send(content);
+    } catch (e) {
+      console.error('Failed to read version file:', e);
+      res.status(500).json({ success: false, error: 'Failed to read version file' });
+    }
   })
 );
 

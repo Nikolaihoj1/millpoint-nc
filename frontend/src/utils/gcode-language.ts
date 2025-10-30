@@ -89,6 +89,14 @@ export function registerGCodeLanguage(monaco: any) {
     colors: {
       'editor.background': '#1E1E1E',
       'editor.foreground': '#D4D4D4',
+      // Diff emphasis
+      'diffEditor.insertedTextBackground': '#176c2e55',
+      'diffEditor.removedTextBackground': '#8b1a1a55',
+      'diffEditor.insertedLineBackground': '#0f3d2055',
+      'diffEditor.removedLineBackground': '#3d0f0f55',
+      'diffEditor.diagonalFill': '#00000000',
+      'editorOverviewRuler.addedForeground': '#22c55e',
+      'editorOverviewRuler.deletedForeground': '#ef4444',
     },
   });
 
@@ -106,6 +114,14 @@ export function registerGCodeLanguage(monaco: any) {
     colors: {
       'editor.background': '#1E1E1E',
       'editor.foreground': '#D4D4D4',
+      // Diff emphasis
+      'diffEditor.insertedTextBackground': '#176c2e55',
+      'diffEditor.removedTextBackground': '#8b1a1a55',
+      'diffEditor.insertedLineBackground': '#0f3d2055',
+      'diffEditor.removedLineBackground': '#3d0f0f55',
+      'diffEditor.diagonalFill': '#00000000',
+      'editorOverviewRuler.addedForeground': '#22c55e',
+      'editorOverviewRuler.deletedForeground': '#ef4444',
     },
   });
 }

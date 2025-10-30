@@ -3,7 +3,7 @@
  * Following Cursor Clause 4.5 Rules
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 /**
  * API response wrapper

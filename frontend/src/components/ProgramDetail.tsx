@@ -1,10 +1,11 @@
-import { useState } from 'react';
-import Editor from '@monaco-editor/react';
+import { useEffect, useRef, useState } from 'react';
+import Editor, { DiffEditor } from '@monaco-editor/react';
 import type { NCProgram } from '../types';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
 import { NCCodeEditor } from './NCCodeEditor';
+import { programsApi } from '../api';
 import { registerGCodeLanguage } from '../utils/gcode-language';
 import { useSetupSheets } from '../hooks';
 import {
@@ -36,17 +37,20 @@ interface ProgramDetailProps {
 
 export function ProgramDetail({ program, onBack, onViewSetupSheet, onEditSetupSheet }: ProgramDetailProps) {
   const [isEditing, setIsEditing] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [versions, setVersions] = useState<any[]>([]);
+  const [loadingVersions, setLoadingVersions] = useState(false);
+  const [versionError, setVersionError] = useState<string | null>(null);
+  const [compareWith, setCompareWith] = useState<any | null>(null);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [comments, setComments] = useState<Array<{ author: string; text: string; when: string }>>([]);
   
   // Fetch setup sheet data
   const { setupSheets, loading: loadingSetupSheet } = useSetupSheets(program.id);
   const setupSheet = setupSheets && setupSheets.length > 0 ? setupSheets[0] : null;
   
   // Debug: Log setup sheet data
-  if (setupSheet) {
-    console.log('Setup sheet found:', setupSheet);
-  } else if (!loadingSetupSheet) {
-    console.log('No setup sheet found for program:', program.id);
-  }
+  // Quiet noisy logs that trigger re-renders
   
   // Handle loading state
   if (!program) {
@@ -144,6 +148,50 @@ M30
     registerGCodeLanguage(monaco);
   };
 
+  // Simple diff renderer (let Monaco manage models to avoid disposal race)
+  const CodeDiff = ({ original, modified }: { original: string; modified: string }) => (
+    <DiffEditor
+      key={`diffview-${program.id}-${compareWith?.id || 'none'}`}
+      original={original || ''}
+      modified={modified || ''}
+      height="80vh"
+      language={language}
+      theme={theme}
+      beforeMount={handleEditorWillMount}
+      options={{
+        readOnly: true,
+        renderSideBySide: true,
+        renderIndicators: true,
+        ignoreTrimWhitespace: false,
+        fontSize: 13,
+        minimap: { enabled: true },
+        automaticLayout: true,
+      }}
+    />
+  );
+
+  // Compare modal overlays the page but we keep the main tree (hidden) to preserve hooks order
+
+  useEffect(() => {
+    if (!showHistory) return;
+    (async () => {
+      try {
+        setLoadingVersions(true);
+        setVersionError(null);
+        const res = await programsApi.getVersions(program.id);
+        if (res.success) {
+          setVersions(res.data || []);
+        } else {
+          setVersionError(res.error || 'Kunne ikke hente versionshistorik');
+        }
+      } catch (e: any) {
+        setVersionError(e?.message || 'Kunne ikke hente versionshistorik');
+      } finally {
+        setLoadingVersions(false);
+      }
+    })();
+  }, [showHistory, program.id]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -183,22 +231,25 @@ M30
         </div>
       </div>
 
+      {!compareWith && (
       <div className="grid gap-6 md:grid-cols-3">
         {/* Main Content */}
         <div className="md:col-span-2 space-y-6">
           {/* NC Program Code */}
           {isEditing ? (
-            <NCCodeEditor
-              programId={program.id}
-              initialCode={ncCode}
-              machineType={(program as any).machine?.type || machineName}
-              onSave={(code) => {
-                setIsEditing(false);
-                // Optionally refresh the program data
-              }}
-              onClose={() => setIsEditing(false)}
-              readOnly={program.status === 'Released' || program.status === 'Approved'}
-            />
+            <div className="h-[calc(100vh-180px)]">
+              <NCCodeEditor
+                programId={program.id}
+                initialCode={ncCode}
+                machineType={(program as any).machine?.type || machineName}
+                onSave={(code) => {
+                  setIsEditing(false);
+                  // Optionally refresh the program data
+                }}
+                onClose={() => setIsEditing(false)}
+                readOnly={program.status === 'Released' || program.status === 'Approved'}
+              />
+            </div>
           ) : (
             <Card>
               <CardHeader>
@@ -209,7 +260,7 @@ M30
                       <GitCompare className="mr-2 h-4 w-4" />
                       Sammenlign
                     </Button>
-                    <Button variant="outline" size="sm">
+                    <Button variant="outline" size="sm" onClick={() => setShowHistory(true)}>
                       Vis Historik
                     </Button>
                   </div>
@@ -353,7 +404,11 @@ M30
                   <MessageSquare className="h-5 w-5" />
                   Kommentarer & Samarbejde
                 </CardTitle>
-                <Button size="sm">Tilføj Kommentar</Button>
+                <Button size="sm" onClick={() => {
+                  const text = prompt('Skriv kommentar');
+                  if (!text) return;
+                  setComments([{ author: (program as any).author?.name || 'Bruger', text, when: 'Lige nu' }, ...comments]);
+                }}>Tilføj Kommentar</Button>
               </div>
             </CardHeader>
             <CardContent>
@@ -370,6 +425,20 @@ M30
                     <p className="text-sm">Godkendt til udgivelse. Værktøjsoffsets verificeret og stemmer overens med opsætningsark.</p>
                   </div>
                 </div>
+                {comments.map((c, i) => (
+                  <div key={i} className="flex gap-3">
+                    <div className="h-8 w-8 rounded-full bg-gray-100 flex items-center justify-center">
+                      <User className="h-4 w-4 text-gray-600" />
+                    </div>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="font-medium text-sm">{c.author}</span>
+                        <span className="text-xs text-muted-foreground">{c.when}</span>
+                      </div>
+                      <p className="text-sm">{c.text}</p>
+                    </div>
+                  </div>
+                ))}
                 <div className="flex gap-3">
                   <div className="h-8 w-8 rounded-full bg-green-100 flex items-center justify-center">
                     <User className="h-4 w-4 text-green-600" />
@@ -389,6 +458,45 @@ M30
 
         {/* Sidebar */}
         <div className="space-y-6">
+          {/* Status actions */}
+          {program.status === 'Draft' && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Arbejdsgang</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                <Button
+                  className="w-full"
+                  onClick={async () => {
+                    try {
+                      const res = await programsApi.updateStatus(program.id, 'In Review');
+                      if (!res.success) throw new Error(res.error || 'Kunne ikke opdatere status');
+                      window.location.reload();
+                    } catch (e: any) {
+                      alert(e?.message || 'Fejl ved opdatering');
+                    }
+                  }}
+                >
+                  Send til Gennemgang
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={async () => {
+                    try {
+                      const res = await programsApi.updateStatus(program.id, 'Released');
+                      if (!res.success) throw new Error(res.error || 'Kunne ikke udgive');
+                      window.location.reload();
+                    } catch (e: any) {
+                      alert(e?.message || 'Fejl ved udgivelse');
+                    }
+                  }}
+                >
+                  Udgiv direkte
+                </Button>
+              </CardContent>
+            </Card>
+          )}
           {/* Program Details */}
           <Card>
             <CardHeader>
@@ -619,6 +727,70 @@ M30
           </Card>
         </div>
       </div>
+      )}
+      
+      {/* History Modal */}
+      {showHistory && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={() => { setShowHistory(false); setCompareWith(null); }}>
+          <div className="bg-background rounded-lg w-full max-w-3xl max-h-[80vh] overflow-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b flex items-center justify-between">
+              <CardTitle>Versionshistorik</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => setShowHistory(false)}>Luk</Button>
+            </div>
+            <div className="p-4 space-y-3">
+              {loadingVersions && <p className="text-sm text-muted-foreground">Henter...</p>}
+              {versionError && <p className="text-sm text-red-600">{versionError}</p>}
+              {!loadingVersions && !versionError && versions.map((v) => (
+                <div key={v.id} className="p-3 border rounded-lg flex items-center justify-between">
+                  <div className="space-y-1">
+                    <p className="font-medium">v{v.versionNumber} • Rev {v.revision}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(v.createdAt).toLocaleString('da-DK')} • {v.changeLog || 'Ingen beskrivelse'}</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={async () => {
+                    try {
+                          console.log('Compare clicked for version', v);
+                      setCompareLoading(true);
+                          const original = await programsApi.getVersionContent(program.id, v.id);
+                          console.log('Fetched version content length', original?.length ?? 0);
+                          setCompareWith({ ...v, _content: original });
+                    } catch (e: any) {
+                          alert(e?.message || 'Kunne ikke hente versionsindhold');
+                    } finally {
+                          setCompareLoading(false);
+                        }
+                      }}
+                    >
+                      Sammenlign
+                    </Button>
+                  </div>
+                </div>
+              ))}
+              {versions.length === 0 && !loadingVersions && (
+                <p className="text-sm text-muted-foreground">Ingen versioner endnu.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Compare Modal */}
+      {compareWith && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-2 sm:p-4" onClick={() => { setCompareWith(null); }}>
+          <div className="bg-background rounded-lg w-full max-w-[95vw] max-h-[90vh] overflow-hidden flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="p-4 border-b flex items-center justify-between">
+              <CardTitle>Sammenlign: Nuværende vs v{compareWith.versionNumber}</CardTitle>
+              <Button variant="ghost" size="sm" onClick={() => { setCompareWith(null); }}>Luk</Button>
+            </div>
+            <div className="flex-1">
+              <CodeDiff original={compareWith._content || 'Indlæser version...'} modified={ncCode} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

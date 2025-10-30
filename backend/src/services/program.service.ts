@@ -216,7 +216,7 @@ export class ProgramService {
    */
   async updateProgram(id: string, data: UpdateProgramInput) {
     // Check if program exists
-    await this.getProgramById(id);
+    const existing = await this.getProgramById(id);
 
     // Update program
     const updated = await db.nCProgram.update({
@@ -227,6 +227,48 @@ export class ProgramService {
         machine: { select: { id: true, name: true, type: true } },
       },
     });
+
+    // If NC code was updated, create a ProgramVersion snapshot
+    if (typeof data.ncCode === 'string') {
+      try {
+        // Resolve a user to attribute the version to
+        let user = await db.user.findFirst();
+        if (!user) {
+          user = await db.user.create({ data: { email: 'system@local', name: 'System', role: 'admin' } });
+        }
+
+        // Determine next version number
+        const latest = await db.programVersion.findFirst({
+          where: { programId: id },
+          orderBy: { versionNumber: 'desc' },
+        });
+        const nextVersion = (latest?.versionNumber || 0) + 1;
+
+        // Write version file to storage/versions
+        const fs = await import('fs/promises');
+        const path = await import('path');
+        const base = process.env.STORAGE_PATH || './storage';
+        const versionsDir = path.join(base, 'versions');
+        await fs.mkdir(versionsDir, { recursive: true });
+        const filePath = path.join(versionsDir, `${id}-v${nextVersion}.nc`);
+        await fs.writeFile(filePath, data.ncCode, 'utf8');
+
+        // Create ProgramVersion entry
+        await db.programVersion.create({
+          data: {
+            programId: id,
+            versionNumber: nextVersion,
+            revision: updated.revision || existing.revision,
+            filePath,
+            changeLog: 'Auto snapshot after code save',
+            createdById: user.id,
+          },
+        });
+      } catch (err) {
+        console.error('Failed to create program version snapshot:', err);
+        // Do not fail the update if versioning fails
+      }
+    }
 
     // Re-index in Meilisearch
     await searchService.indexProgram(updated);

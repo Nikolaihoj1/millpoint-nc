@@ -321,7 +321,7 @@ export function ProgramList({ onSelectProgram, onCreateNew }: ProgramListProps) 
                         DXF
                       </span>
                     )}
-                    {program.hasSetupSheet && (
+                    {(((program as any).setupSheets?.length ?? 0) > 0) && (
                       <span className="flex items-center gap-1 text-purple-600">
                         <ClipboardList className="h-3 w-3" />
                         Opsætning

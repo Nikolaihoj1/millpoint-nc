@@ -161,12 +161,6 @@ export class SetupSheetService {
         },
       });
 
-      // Update program to indicate it has a setup sheet
-      await db.nCProgram.update({
-        where: { id: programId },
-        data: { hasSetupSheet: true },
-      });
-
       // Return the sheet - Express will serialize it correctly
       return sheet;
     } catch (error: any) {
@@ -269,12 +263,7 @@ export class SetupSheetService {
       where: { programId: sheet.programId },
     });
 
-    if (remainingSheets === 0) {
-      await db.nCProgram.update({
-        where: { id: sheet.programId },
-        data: { hasSetupSheet: false },
-      });
-    }
+    // No need to update a boolean flag; presence of related rows indicates existence
   }
 
   /**

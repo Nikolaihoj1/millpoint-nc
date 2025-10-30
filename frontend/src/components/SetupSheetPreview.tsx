@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/Card';
 import { Badge } from './ui/Badge';
 import { Button } from './ui/Button';
 import { useSetupSheets } from '../hooks';
+import { setupSheetsApi } from '../api';
 import { 
   Camera, 
   Image, 
@@ -22,6 +23,8 @@ interface SetupSheetPreviewProps {
 
 export function SetupSheetPreview({ programId, onBack, onEdit }: SetupSheetPreviewProps) {
   const { setupSheets, loading, error } = useSetupSheets(programId);
+  const [approving, setApproving] = useState(false);
+  const [approveError, setApproveError] = useState<string | null>(null);
   
   // Get the first (most recent) setup sheet, or null if none exist
   const setupSheet = setupSheets && setupSheets.length > 0 ? setupSheets[0] : null;
@@ -131,8 +134,35 @@ export function SetupSheetPreview({ programId, onBack, onEdit }: SetupSheetPrevi
               Rediger
             </Button>
           )}
+          {!transformedSheet.approvedBy && (
+            <Button
+              onClick={async () => {
+                try {
+                  setApproving(true);
+                  setApproveError(null);
+                  // Approve the most recent setup sheet (first in list)
+                  const sheetId = setupSheet.id as any;
+                  const res = await setupSheetsApi.approve(sheetId);
+                  if (!res.success) throw new Error(res.error || 'Kunne ikke godkende');
+                  // Simple refresh
+                  window.location.reload();
+                } catch (e: any) {
+                  setApproveError(e?.message || 'Fejl ved godkendelse');
+                } finally {
+                  setApproving(false);
+                }
+              }}
+              disabled={approving}
+            >
+              {approving ? 'Godkender...' : 'Godkend'}
+            </Button>
+          )}
         </div>
       </div>
+
+      {approveError && (
+        <div className="bg-red-50 border border-red-200 rounded p-2 text-sm text-red-700">{approveError}</div>
+      )}
 
       <div className="grid gap-6 md:grid-cols-3">
         {/* Main Content */}

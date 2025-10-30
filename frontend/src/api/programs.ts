@@ -3,7 +3,7 @@
  * Following Cursor Clause 4.5 Rules
  */
 
-import { apiClient } from './client';
+import { apiClient, API_BASE_URL } from './client';
 import type { ApiResponse } from './client';
 import type { NCProgram } from '../types';
 
@@ -74,6 +74,15 @@ export const programsApi = {
    */
   async getVersions(id: string): Promise<ApiResponse<any[]>> {
     return apiClient.get(`/api/programs/${id}/versions`);
+  },
+
+  /**
+   * Get the content of a specific program version
+   */
+  async getVersionContent(programId: string, versionId: string): Promise<string> {
+    const res = await fetch(`${API_BASE_URL}/api/programs/${programId}/versions/${versionId}/content`);
+    if (!res.ok) throw new Error('Kunne ikke hente versionsindhold');
+    return await res.text();
   },
 };
 

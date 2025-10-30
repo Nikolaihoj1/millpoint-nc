@@ -1,0 +1,27 @@
+%
+O15e7ac3-b3cb-4b68-9f51-bf3b0974ea1e (123)
+(DEL: undefined REV A)
+(OPERATION: 123)
+(MASKINE: DMG Mori DMU 50)
+(MATERIALE: 123)
+(PROGRAMMØR: Hans Jensen)
+
+G54 G90 G17 G20 G40 G49 G80
+G0 G91 G28 Z0.
+G28 X0. Y0.
+
+(VÆRKTØJ 1 - 1" PLANFRÆSER)
+T1 M6
+G0 G90 G54 X0. Y0. S1200 M3
+G43 H1 Z0.1 M8
+G1 Z-0.05 F10.
+G1 X4. F30.
+G1 Y4.
+G1 X0.ghjkghjkghjk
+G1 Y0.hjkhjgkfhgfjk
+G0 Z0.1
+G0 G91 G28 Z0.
+M5
+M9gjhkghjkghjk
+M30
+%
